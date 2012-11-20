@@ -1,0 +1,24 @@
+{
+    "type": "object",
+    "name": "list",
+    "properties": {
+        "bookId": {
+            "type": "integer",
+            "description": "List identifier",
+            "required": true
+        },
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "string"},
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    }
+                }
+            }
+        }
+    }
+}

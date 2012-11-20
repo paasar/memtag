@@ -1,0 +1,19 @@
+{
+    "bookId": 1,
+    "items":
+    [
+        {
+            "value": "http://www.raah.fi",
+            "tags": ["omat", "RAAH"]
+        },
+        {
+            "value": "maitoa",
+            "tags": ["ruokalista"]
+        },
+        {
+            "value": "leipaeae",
+            "tags": ["ruokalista"]
+        }
+    ]
+}
+
