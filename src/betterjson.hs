@@ -1,17 +1,25 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    modify value
+    pretty print results
     delete value
     add tag
     remove tag
-    pretty print
-      output options:
-        sort
-        show tags
+    list tags
+    modify value
+    pretty print JSON
+    output options:
+       sort
+       show tags
     special tags (date)
     check argument amount
     date to items
-  -}
+    tag wildcards
+    tag1+tag2-tag3
+    find value by part of value
+  DONE:
+    find value by tags
+    add value
+-}
 import qualified Control.Exception as C
 import System.Environment(getArgs)
 import System.Directory
