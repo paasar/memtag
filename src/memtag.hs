@@ -1,8 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    delete value
-    add tag
-    remove tag
+    delete value by tag(s)
+    add tag,remove tag (tag value +tag2-tag1)
     list tags
     modify value
     pretty print JSON
@@ -19,6 +18,7 @@
     add value
     pretty print results
     date to items (done as a automatic tag)
+    delete value
 -}
 import qualified Control.Exception as C
 import Data.List(intercalate)
@@ -44,8 +44,12 @@ data Item = Item {
 type Tag = String
 
 ---------------------------------------
-syntaxMsg = "Syntax: <path to file> [find/add value/del value] tag1[:tag2...]"
+syntaxMsg = "Syntax: <path to file> find tag1[:tag2...]\n" ++
+            "                       add value tag1[:tag2...]\n" ++
+            "                       del value\n" ++
+            "                       tag value (+/-)tag1[(+/-)tag2...]"
 
+tooFewArgsMsg = "Too few arguments.\n" ++ syntaxMsg
 
 dispatch :: [(String, [String] -> IO ())]  
 dispatch =  [ ("add", addValue)  
@@ -57,15 +61,22 @@ main = execute `C.catch` handler
 
 execute :: IO ()
 execute = do
-  (filename:commandName:args) <- getArgs
+  --(filename:commandName:args) <- getArgs
+  possibleArgs <- getArgs
+  (filename:commandName:args) <- parseArgs possibleArgs
   let maybeAction = lookup commandName dispatch
   
   executeAction maybeAction commandName (filename : args)
 
+parseArgs :: [String] -> IO [String]
+parseArgs [] = fail tooFewArgsMsg
+parseArgs [a] = fail tooFewArgsMsg
+parseArgs args = return args
+
 executeAction :: Maybe ([String] -> IO ()) -> String -> [String] -> IO ()
 executeAction maybeAction commandName args =
   case maybeAction of
-    Nothing -> putStrLn ("Command '" ++ commandName ++ "' not found.\n" ++ syntaxMsg)
+    Nothing -> fail ("Command '" ++ commandName ++ "' not found.\n" ++ syntaxMsg)
     Just action -> do action args
 
 handler :: IOError -> IO ()
@@ -136,8 +147,6 @@ deleteByValue [filepath, value] = do
   let originalItems = items book
   let updatedBook = deleteValueFromBook value book
   let newItems = items updatedBook
-  putStrLn $ show originalItems
-  putStrLn $ show newItems
   
   if originalItems == newItems
     then do
