@@ -12,15 +12,17 @@
        show tags
     special tags (date)
     check argument amount
-    date to items
     tag wildcards
     tag1+tag2-tag3
     find value by part of value
   DONE:
     find value by tags
     add value
+    date to items (done as a automatic tag)
 -}
 import qualified Control.Exception as C
+import Data.List(intercalate)
+import Data.Time
 import System.Environment(getArgs)
 import System.Directory
 import System.IO
@@ -78,11 +80,11 @@ findByTags [filepath, tagStr] = do
   inFile <- openFile filepath ReadMode
   contents <- hGetContents inFile
   let book = (decodeJSON contents :: Book)
-  putStrLn $ show $ map value $ itemsByTags tags book
+  putStrLn $ intercalate "\n" $ map value $ itemsByTags tags book
   
   hClose inFile
 findByTags _ = error "Syntax: <path to file> find tag1[:tag2...]"
-  
+
 itemsByTags :: [Tag] -> Book -> [Item]
 itemsByTags [] _ = []
 itemsByTags (t:ts) b =
@@ -98,7 +100,8 @@ addValue [filepath, value, tagStr] = do
   contents <- hGetContents handle
   
   let book = (decodeJSON contents :: Book)
-  let updatedBook = addValueToBook value tags book
+  dateTag <- createDateTag
+  let updatedBook = addValueToBook value tags dateTag book
   hPutStr tempHandle $ (encodeJSON updatedBook)
   hClose handle
   hClose tempHandle
@@ -107,9 +110,14 @@ addValue [filepath, value, tagStr] = do
   putStrLn $ "Value (" ++ value ++ ") added."
 addValue _ = error "Syntax: <path to file> add value tag1[:tag2...]"
 
-addValueToBook :: String -> [Tag] -> Book -> Book
-addValueToBook value tags oldBook = oldBook {items = (createItem value tags) : (items oldBook)}
-  where createItem value tags = Item {value = value, tags = tags}
+addValueToBook :: String -> [Tag] -> Tag -> Book -> Book
+addValueToBook value tags dateTag oldBook = oldBook {items = (createItem value tags) : (items oldBook)}
+  where createItem value tags = Item {value = value, tags = dateTag : tags}
+
+createDateTag :: IO Tag
+createDateTag = do
+  c <- getCurrentTime
+  return ((show $ utctDay c) :: Tag)
 
 removeByValue :: [String] -> IO ()
 removeByValue [filepath, value] = do
