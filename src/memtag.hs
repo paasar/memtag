@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    pretty print results
     delete value
     add tag
     remove tag
@@ -18,6 +17,7 @@
   DONE:
     find value by tags
     add value
+    pretty print results
     date to items (done as a automatic tag)
 -}
 import qualified Control.Exception as C
@@ -44,29 +44,34 @@ data Item = Item {
 type Tag = String
 
 ---------------------------------------
-syntaxMsg = "Syntax: <path to file> [add value/find] tag1[:tag2...]"
+syntaxMsg = "Syntax: <path to file> [find/add value/del value] tag1[:tag2...]"
 
 
 dispatch :: [(String, [String] -> IO ())]  
 dispatch =  [ ("add", addValue)  
             , ("find", findByTags)  
-            , ("del", removeByValue)  
+            , ("del", deleteByValue)  
             ]
-
 
 main = execute `C.catch` handler
 
 execute :: IO ()
 execute = do
-  (filename:command:args) <- getArgs
-  let (Just action) = lookup command dispatch
-  action (filename : args)
+  (filename:commandName:args) <- getArgs
+  let maybeAction = lookup commandName dispatch
+  
+  executeAction maybeAction commandName (filename : args)
+
+executeAction :: Maybe ([String] -> IO ()) -> String -> [String] -> IO ()
+executeAction maybeAction commandName args =
+  case maybeAction of
+    Nothing -> putStrLn ("Command '" ++ commandName ++ "' not found.\n" ++ syntaxMsg)
+    Just action -> do action args
 
 handler :: IOError -> IO ()
 handler e
   | isDoesNotExistError e = putStrLn "The file doesn't exist!"
   | otherwise = ioError e
-
 
 
 ----------------------------------
@@ -110,15 +115,42 @@ addValue [filepath, value, tagStr] = do
   putStrLn $ "Value (" ++ value ++ ") added."
 addValue _ = error "Syntax: <path to file> add value tag1[:tag2...]"
 
+createDateTag :: IO Tag
+createDateTag = do
+  c <- getCurrentTime
+  return ("Date " ++ (show $ utctDay c) :: Tag)
+
 addValueToBook :: String -> [Tag] -> Tag -> Book -> Book
 addValueToBook value tags dateTag oldBook = oldBook {items = (createItem value tags) : (items oldBook)}
   where createItem value tags = Item {value = value, tags = dateTag : tags}
 
-createDateTag :: IO Tag
-createDateTag = do
-  c <- getCurrentTime
-  return ((show $ utctDay c) :: Tag)
+-- del "valx"
+deleteByValue :: [String] -> IO ()
+deleteByValue [filepath, value] = do
+  handle <- openFile filepath ReadMode
+  (tempName, tempHandle) <- openTempFile "." "temp"
+  contents <- hGetContents handle
+  
+  let book = (decodeJSON contents :: Book)
 
-removeByValue :: [String] -> IO ()
-removeByValue [filepath, value] = do
-  putStrLn "Not yet implemented."
+  let originalItems = items book
+  let updatedBook = deleteValueFromBook value book
+  let newItems = items updatedBook
+  putStrLn $ show originalItems
+  putStrLn $ show newItems
+  
+  if originalItems == newItems
+    then do
+      putStrLn "No match found, nothing done."
+    else do
+      hPutStr tempHandle $ (encodeJSON updatedBook)
+      hClose handle
+      hClose tempHandle
+      removeFile filepath
+      renameFile tempName filepath
+      putStrLn $ "Value (" ++ value ++ ") deleted."
+deleteByValue _ = error "Syntax: <path to file> del value"
+
+deleteValueFromBook :: String -> Book -> Book
+deleteValueFromBook valueToDelete oldBook = oldBook {items = filter (\item -> value item /= valueToDelete) (items oldBook)}
+
