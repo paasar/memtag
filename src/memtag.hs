@@ -1,7 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    delete value by tag(s)
     add tag,remove tag (tag value +tag2-tag1)
+    delete by id
+    delete value by tag(s)
     list tags
     modify value
     pretty print JSON
@@ -21,7 +22,7 @@
     delete value
 -}
 import qualified Control.Exception as C
-import Data.List(intercalate)
+import Data.List(intercalate,(\\))
 import Data.Time
 import System.Environment(getArgs)
 import System.Directory
@@ -37,7 +38,8 @@ data Book = Book {
   } deriving (Eq, Show, Data, Typeable)
 
 data Item = Item {
-    value :: String
+    itemId :: Int
+  , value :: String
   , tags :: [Tag]
   } deriving (Eq, Show, Data, Typeable)
 
@@ -51,17 +53,18 @@ syntaxMsg = "Syntax: <path to file> find tag1[:tag2...]\n" ++
 
 tooFewArgsMsg = "Too few arguments.\n" ++ syntaxMsg
 
-dispatch :: [(String, [String] -> IO ())]  
-dispatch =  [ ("add", addValue)  
-            , ("find", findByTags)  
-            , ("del", deleteByValue)  
+dispatch :: [(String, [String] -> IO ())]
+dispatch =  [ ("add", addValue)
+            , ("find", findByTags)
+            , ("del", deleteByValue)
+            , ("delid", deleteById)
+            , ("tag", changeTags)
             ]
 
 main = execute `C.catch` handler
 
 execute :: IO ()
 execute = do
-  --(filename:commandName:args) <- getArgs
   possibleArgs <- getArgs
   (filename:commandName:args) <- parseArgs possibleArgs
   let maybeAction = lookup commandName dispatch
@@ -86,9 +89,6 @@ handler e
 
 
 ----------------------------------
-stringToTags :: String -> [Tag]
-stringToTags tagStr = splitRegex (mkRegex ":") tagStr
-
 -- find RAAH
 findByTags :: [String] -> IO ()
 findByTags [filepath, tagStr] = do
@@ -96,10 +96,18 @@ findByTags [filepath, tagStr] = do
   inFile <- openFile filepath ReadMode
   contents <- hGetContents inFile
   let book = (decodeJSON contents :: Book)
-  putStrLn $ intercalate "\n" $ map value $ itemsByTags tags book
+  --TODO id to output
+  putStrLn $ printResult $ itemsByTags tags book
   
   hClose inFile
 findByTags _ = error "Syntax: <path to file> find tag1[:tag2...]"
+
+printResult :: [Item] -> String
+printResult [] = ""
+printResult (item:rest) = show (itemId item) ++ ": " ++ value item ++ "\n" ++ printResult rest
+
+stringToTags :: String -> [Tag]
+stringToTags tagStr = splitRegex (mkRegex ":") tagStr
 
 itemsByTags :: [Tag] -> Book -> [Item]
 itemsByTags [] _ = []
@@ -117,13 +125,14 @@ addValue [filepath, value, tagStr] = do
   
   let book = (decodeJSON contents :: Book)
   dateTag <- createDateTag
-  let updatedBook = addValueToBook value tags dateTag book
+  let nextId = nextItemId $ items book
+  let updatedBook = addValueToBook value tags dateTag nextId book
   hPutStr tempHandle $ (encodeJSON updatedBook)
   hClose handle
   hClose tempHandle
   removeFile filepath
   renameFile tempName filepath
-  putStrLn $ "Value (" ++ value ++ ") added."
+  putStrLn $ "Value \"" ++ value ++ "\" (id: " ++ show nextId ++ ") added."
 addValue _ = error "Syntax: <path to file> add value tag1[:tag2...]"
 
 createDateTag :: IO Tag
@@ -131,35 +140,88 @@ createDateTag = do
   c <- getCurrentTime
   return ("Date " ++ (show $ utctDay c) :: Tag)
 
-addValueToBook :: String -> [Tag] -> Tag -> Book -> Book
-addValueToBook value tags dateTag oldBook = oldBook {items = (createItem value tags) : (items oldBook)}
-  where createItem value tags = Item {value = value, tags = dateTag : tags}
+addValueToBook :: String -> [Tag] -> Tag -> Int -> Book -> Book
+addValueToBook value tags dateTag nextId oldBook = oldBook {items = (createItem value tags) : oldItems}
+  where createItem value tags = Item {itemId = nextId,
+                                      value = value,
+                                      tags = dateTag : tags}
+        oldItems = (items oldBook)
+
+nextItemId :: [Item] -> Int
+nextItemId oldItems = (itemId (foldl1 maxId oldItems)) + 1
+  where maxId x y = case compare (itemId x) (itemId y) of
+                    GT -> x
+                    _  -> y
 
 -- del "valx"
 deleteByValue :: [String] -> IO ()
-deleteByValue [filepath, value] = do
+deleteByValue [filepath, valueStr] = do
   handle <- openFile filepath ReadMode
-  (tempName, tempHandle) <- openTempFile "." "temp"
   contents <- hGetContents handle
-  
   let book = (decodeJSON contents :: Book)
-
+  
   let originalItems = items book
-  let updatedBook = deleteValueFromBook value book
+  let updatedBook = deleteFromBook value valueStr book
   let newItems = items updatedBook
   
   if originalItems == newItems
     then do
       putStrLn "No match found, nothing done."
     else do
+      (tempName, tempHandle) <- openTempFile "." "temp"
       hPutStr tempHandle $ (encodeJSON updatedBook)
-      hClose handle
       hClose tempHandle
+      
       removeFile filepath
       renameFile tempName filepath
-      putStrLn $ "Value (" ++ value ++ ") deleted."
+      
+      putStrLn $ "Value \"" ++ valueStr ++ "\" deleted."
+  hClose handle
 deleteByValue _ = error "Syntax: <path to file> del value"
 
-deleteValueFromBook :: String -> Book -> Book
-deleteValueFromBook valueToDelete oldBook = oldBook {items = filter (\item -> value item /= valueToDelete) (items oldBook)}
+-- | Delete Item by Item attribute.
+-- First parameter is the function to extract attribute value.
+-- Second parameter is the target value which should match.
+deleteFromBook :: (Eq a) => (Item -> a) -> a -> Book -> Book
+deleteFromBook f toDelete oldBook = oldBook {items = filter (\item -> f item /= toDelete) (items oldBook)}
 
+-- delid 123
+deleteById :: [String] -> IO ()
+deleteById [filepath, idStr] = do
+  handle <- openFile filepath ReadMode
+  contents <- hGetContents handle
+  
+  let book = (decodeJSON contents :: Book)
+
+  let originalItems = items book
+  -- TODO fail for non-int input
+  let updatedBook = deleteFromBook itemId (read idStr :: Int) book
+  let newItems = items updatedBook
+  
+  if originalItems == newItems
+    then do
+      putStrLn "No match found, nothing done."
+    else do
+      (tempName, tempHandle) <- openTempFile "." "temp"
+      hPutStr tempHandle $ (encodeJSON updatedBook)
+      hClose tempHandle
+      
+      removeFile filepath
+      renameFile tempName filepath
+      
+      let valueStr = value $ head $ originalItems \\ newItems
+      putStrLn $ "Value \"" ++ valueStr ++ "\" deleted."
+  hClose handle
+deleteById _ = error "Syntax: <path to file> delid itemId"
+
+-- tag value +tag2-tag1
+changeTags :: [String] -> IO ()
+changeTags [filename, value, tagStr] = do
+  let (addTags, delTags) = parseChangeTags tagStr
+  putStrLn $ show addTags
+  putStrLn $ show delTags
+  putStrLn "Not yet implemented."
+
+parseChangeTags :: String -> ([Tag], [Tag])
+--TODO
+parseChangeTags s = ([],[])

@@ -12,6 +12,7 @@
             "items": {
                 "type": "object",
                 "properties": {
+                    "itemId": {"type": "integer"},
                     "value": {"type": "string"},
                     "tags": {
                         "type": "array",
