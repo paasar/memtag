@@ -1,9 +1,9 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
     add tag,remove tag (tag value +tag2-tag1)
-    delete by id
-    delete value by tag(s)
+    delete value(s) by tag(s)
     list tags
+    list all values
     modify value
     pretty print JSON
     output options:
@@ -14,12 +14,14 @@
     tag wildcards
     tag1+tag2-tag3
     find value by part of value
+    refactor file handling into one place
   DONE:
     find value by tags
     add value
     pretty print results
     date to items (done as a automatic tag)
     delete value
+    delete by id
 -}
 import qualified Control.Exception as C
 import Data.List(intercalate,(\\))
@@ -45,6 +47,7 @@ data Item = Item {
 
 type Tag = String
 
+---------------------------------------
 ---------------------------------------
 syntaxMsg = "Syntax: <path to file> find tag1[:tag2...]\n" ++
             "                       add value tag1[:tag2...]\n" ++
@@ -96,7 +99,7 @@ findByTags [filepath, tagStr] = do
   inFile <- openFile filepath ReadMode
   contents <- hGetContents inFile
   let book = (decodeJSON contents :: Book)
-  --TODO id to output
+
   putStrLn $ printResult $ itemsByTags tags book
   
   hClose inFile
@@ -104,7 +107,8 @@ findByTags _ = error "Syntax: <path to file> find tag1[:tag2...]"
 
 printResult :: [Item] -> String
 printResult [] = ""
-printResult (item:rest) = show (itemId item) ++ ": " ++ value item ++ "\n" ++ printResult rest
+printResult (item:rest) = show (itemId item) ++ ": " ++ value item ++ "\n"
+                          ++ printResult rest
 
 stringToTags :: String -> [Tag]
 stringToTags tagStr = splitRegex (mkRegex ":") tagStr
@@ -141,7 +145,8 @@ createDateTag = do
   return ("Date " ++ (show $ utctDay c) :: Tag)
 
 addValueToBook :: String -> [Tag] -> Tag -> Int -> Book -> Book
-addValueToBook value tags dateTag nextId oldBook = oldBook {items = (createItem value tags) : oldItems}
+addValueToBook value tags dateTag nextId oldBook =
+    oldBook {items = (createItem value tags) : oldItems}
   where createItem value tags = Item {itemId = nextId,
                                       value = value,
                                       tags = dateTag : tags}
