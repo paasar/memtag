@@ -1,16 +1,12 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    add tag,remove tag (tag value +tag2-tag1)
     delete value(s) by tag(s)
-    list tags
-    list all values
     modify value
     pretty print JSON
     output options:
        sort
        show tags
     special tags (date)
-    check argument amount
     tag wildcards
     tag1+tag2-tag3
     find value by part of value
@@ -22,9 +18,13 @@
     date to items (done as a automatic tag)
     delete value
     delete by id
+    add tag,remove tag (tag value +tag2-tag1)
+    list tags
+    list all values
+    ~check argument amount
 -}
 import qualified Control.Exception as C
-import Data.List(find, intercalate, nub, (\\))
+import Data.List(find, intercalate, nub, sort, (\\))
 import Data.Time
 import System.Environment(getArgs)
 import System.Directory
@@ -50,10 +50,11 @@ type Tag = String
 
 ---------------------------------------
 ---------------------------------------
-syntaxMsg = "Syntax: <path to file> find tag1[:tag2...]\n" ++
-            "                       add value tag1[:tag2...]\n" ++
-            "                       del value\n" ++
-            "                       tag value (+/-)tag1[(+/-)tag2...]"
+syntaxMsg = "Syntax: <path to file> find tag1[:tag2...]\n"
+         ++ "                       add value tag1[:tag2...]\n"
+         ++ "                       del value\n"
+         ++ "                       tag value (+/-)tag1[(+/-)tag2...]"
+         ++ "                       list \"t\"/\"v\""
 
 tooFewArgsMsg = "Too few arguments.\n" ++ syntaxMsg
 
@@ -63,6 +64,7 @@ dispatch =  [ ("add", addValue)
             , ("del", deleteByValue)
             , ("delid", deleteById)
             , ("tag", changeTags)
+            , ("list", list)
             ]
 
 main = execute `C.catch` handler
@@ -91,6 +93,26 @@ handler e
   | isDoesNotExistError e = putStrLn "The file doesn't exist!"
   | otherwise = ioError e
 
+
+----------------------------------
+-- list t/v
+list :: [String] -> IO ()
+list [filepath, desiredType] = do
+  inFile <- openFile filepath ReadMode
+  contents <- hGetContents inFile
+  let book = (decodeJSON contents :: Book)
+
+  if desiredType == "t"
+    then do
+      putStrLn $ intercalate "\n" $ getTags $ items book
+    else do
+      putStrLn $ printResult $ items book
+   
+  hClose inFile
+
+getTags :: [Item] -> [Tag]
+getTags [] = []
+getTags (item:rest) = sort $ nub $ tags item ++ getTags rest
 
 ----------------------------------
 -- find RAAH
@@ -124,6 +146,7 @@ itemsByTags [] _ = []
 itemsByTags (t:ts) b =
   filter (\item -> t `elem` (tags item)) (items b) ++ (itemsByTags ts b)
 
+----------------------------------
 -- add "val1" tag1:tag2
 addValue :: [String] -> IO ()
 addValue [filepath, value, tagStr] = do
@@ -164,6 +187,7 @@ nextItemId oldItems = (itemId (foldl1 maxId oldItems)) + 1
                     GT -> x
                     _  -> y
 
+----------------------------------
 -- del "valx"
 deleteByValue :: [String] -> IO ()
 deleteByValue [filepath, valueStr] = do
@@ -196,6 +220,7 @@ deleteByValue _ = error "Syntax: <path to file> del value"
 deleteFromBook :: (Eq a) => (Item -> a) -> a -> Book -> Book
 deleteFromBook f toDelete oldBook = oldBook { items = filter (\item -> f item /= toDelete) (items oldBook) }
 
+----------------------------------
 -- delid 123
 deleteById :: [String] -> IO ()
 deleteById [filepath, idStr] = do
@@ -225,6 +250,7 @@ deleteById [filepath, idStr] = do
   hClose handle
 deleteById _ = error "Syntax: <path to file> delid itemId"
 
+----------------------------------
 -- tag value +tag2-tag1...
 changeTags :: [String] -> IO ()
 changeTags [filepath, value, tagStr] = do
