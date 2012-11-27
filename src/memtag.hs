@@ -24,7 +24,7 @@
     delete by id
 -}
 import qualified Control.Exception as C
-import Data.List(intercalate,(\\))
+import Data.List(find, intercalate, nub, (\\))
 import Data.Time
 import System.Environment(getArgs)
 import System.Directory
@@ -33,6 +33,7 @@ import System.IO.Error
 import Text.JSON
 import Text.JSON.Generic
 import Text.Regex(splitRegex, mkRegex)
+import Text.Regex.Posix
 
 data Book = Book {
     bookId :: Int
@@ -147,9 +148,9 @@ createDateTag = do
 addValueToBook :: String -> [Tag] -> Tag -> Int -> Book -> Book
 addValueToBook value tags dateTag nextId oldBook =
     oldBook {items = (createItem value tags) : oldItems}
-  where createItem value tags = Item {itemId = nextId,
-                                      value = value,
-                                      tags = dateTag : tags}
+  where createItem value tags = Item { itemId = nextId,
+                                       value = value,
+                                       tags = dateTag : tags }
         oldItems = (items oldBook)
 
 nextItemId :: [Item] -> Int
@@ -188,7 +189,7 @@ deleteByValue _ = error "Syntax: <path to file> del value"
 -- First parameter is the function to extract attribute value.
 -- Second parameter is the target value which should match.
 deleteFromBook :: (Eq a) => (Item -> a) -> a -> Book -> Book
-deleteFromBook f toDelete oldBook = oldBook {items = filter (\item -> f item /= toDelete) (items oldBook)}
+deleteFromBook f toDelete oldBook = oldBook { items = filter (\item -> f item /= toDelete) (items oldBook) }
 
 -- delid 123
 deleteById :: [String] -> IO ()
@@ -199,7 +200,7 @@ deleteById [filepath, idStr] = do
   let book = (decodeJSON contents :: Book)
 
   let originalItems = items book
-  -- TODO fail for non-int input
+  -- TODO: fail for non-int input
   let updatedBook = deleteFromBook itemId (read idStr :: Int) book
   let newItems = items updatedBook
   
@@ -221,12 +222,64 @@ deleteById _ = error "Syntax: <path to file> delid itemId"
 
 -- tag value +tag2-tag1
 changeTags :: [String] -> IO ()
-changeTags [filename, value, tagStr] = do
+changeTags [filepath, value, tagStr] = do
   let (addTags, delTags) = parseChangeTags tagStr
-  putStrLn $ show addTags
-  putStrLn $ show delTags
-  putStrLn "Not yet implemented."
+  
+  handle <- openFile filepath ReadMode
+  contents <- hGetContents handle
+  
+  let book = (decodeJSON contents :: Book)
+
+  let originalItems = items book
+  -- TODO: fail for non-int input
+  let updatedBook = modifyItemTags value addTags delTags book
+  let newItems = items updatedBook
+  
+  if originalItems == newItems
+    then do
+      putStrLn "No match found, nothing done."
+    else do
+      (tempName, tempHandle) <- openTempFile "." "temp"
+      hPutStr tempHandle $ (encodeJSON updatedBook)
+      hClose tempHandle
+      
+      removeFile filepath
+      renameFile tempName filepath
+      
+      putStrLn $ "Value \"" ++ value ++ "\" modified:"
+      putStrLn $ "  +" ++ show addTags
+      putStrLn $ "  -" ++ show delTags
+  hClose handle
+changeTags _ = error "Syntax: <path to file> tag value (+/-)tag1[(+/-)tag2...]"
 
 parseChangeTags :: String -> ([Tag], [Tag])
---TODO
-parseChangeTags s = ([],[])
+parseChangeTags str = toPlusAndMinusTags $ stringToPlusMinusParts str
+
+-- TODO: Can't insert plus or minus in tags
+stringToPlusMinusParts :: String -> [String]
+stringToPlusMinusParts tagStr = concat (tagStr =~ "[+-][^+-]+" :: [[String]])
+
+toPlusAndMinusTags :: [String] -> ([Tag], [Tag])
+toPlusAndMinusTags plusMinusParts = recursePlusMinusTags plusMinusParts [] []
+  where recursePlusMinusTags [] plusTags minusTags = (plusTags, minusTags) 
+        recursePlusMinusTags (part:rest) plusTags minusTags =
+          case (head part) of
+            '+' -> recursePlusMinusTags rest ((actualTag :: Tag) : plusTags) minusTags
+            '-' -> recursePlusMinusTags rest plusTags ((actualTag :: Tag) : minusTags)
+            -- TODO: This silently ignores unexpected modifiers.
+            -- Not a problem at this point because stringToPlusMinusParts splits only with + and -
+            c   -> recursePlusMinusTags rest plusTags minusTags
+          where actualTag = tail part
+
+modifyItemTags :: String -> [Tag] -> [Tag] -> Book -> Book
+modifyItemTags targetValue plusTags minusTags oldBook =
+    oldBook { items = modifyValueTags (items oldBook) targetValue plusTags minusTags }
+  where modifyValueTags items value' plusTags' minusTags' =
+          case (find (\item -> value item == value') items) of
+            Nothing    -> items
+            Just item' -> modifyTags item' plusTags' minusTags'
+                          : filter (\item'' -> value item'' /= value') items
+
+modifyTags :: Item -> [Tag] -> [Tag] -> Item
+modifyTags orig plusTags minusTags = orig { tags = nub $
+  plusTags ++ filter (\tag -> tag `notElem` minusTags) (tags orig) }
