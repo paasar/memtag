@@ -101,8 +101,13 @@ findByTags [filepath, tagStr] = do
   contents <- hGetContents inFile
   let book = (decodeJSON contents :: Book)
 
-  putStrLn $ printResult $ itemsByTags tags book
-  
+  let foundTags = itemsByTags tags book
+  if length foundTags > 0
+    then do
+      putStrLn $ printResult $ foundTags
+    else do
+      putStrLn "No matches."
+   
   hClose inFile
 findByTags _ = error "Syntax: <path to file> find tag1[:tag2...]"
 
@@ -220,7 +225,7 @@ deleteById [filepath, idStr] = do
   hClose handle
 deleteById _ = error "Syntax: <path to file> delid itemId"
 
--- tag value +tag2-tag1
+-- tag value +tag2-tag1...
 changeTags :: [String] -> IO ()
 changeTags [filepath, value, tagStr] = do
   let (addTags, delTags) = parseChangeTags tagStr
@@ -255,7 +260,7 @@ changeTags _ = error "Syntax: <path to file> tag value (+/-)tag1[(+/-)tag2...]"
 parseChangeTags :: String -> ([Tag], [Tag])
 parseChangeTags str = toPlusAndMinusTags $ stringToPlusMinusParts str
 
--- TODO: Can't insert plus or minus in tags
+-- TODO: Can't use plus or minus characters in tags
 stringToPlusMinusParts :: String -> [String]
 stringToPlusMinusParts tagStr = concat (tagStr =~ "[+-][^+-]+" :: [[String]])
 
@@ -264,12 +269,12 @@ toPlusAndMinusTags plusMinusParts = recursePlusMinusTags plusMinusParts [] []
   where recursePlusMinusTags [] plusTags minusTags = (plusTags, minusTags) 
         recursePlusMinusTags (part:rest) plusTags minusTags =
           case (head part) of
-            '+' -> recursePlusMinusTags rest ((actualTag :: Tag) : plusTags) minusTags
-            '-' -> recursePlusMinusTags rest plusTags ((actualTag :: Tag) : minusTags)
+            '+' -> recursePlusMinusTags rest (actualTag : plusTags) minusTags
+            '-' -> recursePlusMinusTags rest plusTags (actualTag : minusTags)
             -- TODO: This silently ignores unexpected modifiers.
             -- Not a problem at this point because stringToPlusMinusParts splits only with + and -
             c   -> recursePlusMinusTags rest plusTags minusTags
-          where actualTag = tail part
+          where actualTag = tail part :: Tag
 
 modifyItemTags :: String -> [Tag] -> [Tag] -> Book -> Book
 modifyItemTags targetValue plusTags minusTags oldBook =
