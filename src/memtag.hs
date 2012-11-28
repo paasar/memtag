@@ -1,12 +1,11 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    modify tags selector is id
     delete value(s) by tag(s)
     modify value
     pretty print JSON
     output options:
        sort
-       show tags
+       hide tags
     special tags (date)
     tag wildcards
     tag1+tag2-tag3
@@ -24,6 +23,7 @@
     ~check argument amount
     find value with tag-modifiers
     refactor file handling into one place
+    modify tags selector is id
 -}
 import qualified Control.Exception as C
 import Data.List(find, intercalate, intersect, nub, sort, (\\))
@@ -154,7 +154,8 @@ findByTags _ = error "Syntax: <path to file> find tag1[:tag2...]"
 
 printResult :: [Item] -> String
 printResult [] = ""
-printResult (item:rest) = show (itemId item) ++ ": " ++ value item ++ "\n"
+printResult (item:rest) = show (itemId item) ++ ": " ++ value item
+                          ++ " [" ++ (intercalate ", " (tags item)) ++ "]\n"
                           ++ printResult rest
 
 stringToTags :: String -> String -> [String]
@@ -266,14 +267,14 @@ deleteById _ = error "Syntax: <path to file> delid itemId"
 ----------------------------------
 -- tag value +tag2-tag1...
 changeTags :: [String] -> IO ()
-changeTags [filepath, value, tagStr] = do
+changeTags [filepath, idStr, tagStr] = do
   let (addTags, delTags) = parseChangeTags tagStr
   
   (book, inFile) <- readBook filepath
 
   let originalItems = items book
   -- TODO: fail for non-int input
-  let updatedBook = modifyItemTags value addTags delTags book
+  let updatedBook = modifyItemTags (read idStr :: Int) addTags delTags book
   let newItems = items updatedBook
   
   if originalItems == newItems
@@ -283,7 +284,7 @@ changeTags [filepath, value, tagStr] = do
     else do
       writeBook filepath inFile updatedBook
       
-      putStrLn $ "Value \"" ++ value ++ "\" modified:"
+      putStrLn $ "Item #" ++ idStr ++ " modified:"
       putStrLn $ "  +" ++ show addTags
       putStrLn $ "  -" ++ show delTags
 changeTags _ = error "Syntax: <path to file> tag value (+|-)tag1[(+|-)tag2...]"
@@ -308,14 +309,14 @@ toPlusAndMinusTags plusMinusParts = recursePlusMinusTags plusMinusParts [] []
             c   -> recursePlusMinusTags rest (part : plusTags) minusTags
           where actualTag = tail part :: Tag
 
-modifyItemTags :: String -> [Tag] -> [Tag] -> Book -> Book
-modifyItemTags targetValue plusTags minusTags oldBook =
-    oldBook { items = modifyValueTags (items oldBook) targetValue plusTags minusTags }
-  where modifyValueTags items value' plusTags' minusTags' =
-          case (find (\item -> value item == value') items) of
+modifyItemTags :: Int -> [Tag] -> [Tag] -> Book -> Book
+modifyItemTags targetId plusTags minusTags oldBook =
+    oldBook { items = modifyValueTags (items oldBook) targetId plusTags minusTags }
+  where modifyValueTags items targetId' plusTags' minusTags' =
+          case (find (\item -> itemId item == targetId') items) of
             Nothing    -> items
             Just item' -> modifyTags item' plusTags' minusTags'
-                          : filter (\item'' -> value item'' /= value') items
+                          : filter (\item'' -> itemId item'' /= targetId') items
 
 modifyTags :: Item -> [Tag] -> [Tag] -> Item
 modifyTags orig plusTags minusTags = orig { tags = nub $
