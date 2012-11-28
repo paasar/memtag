@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
+    find value tag-modifiers
     delete value(s) by tag(s)
     modify value
     pretty print JSON
@@ -24,7 +25,7 @@
     ~check argument amount
 -}
 import qualified Control.Exception as C
-import Data.List(find, intercalate, nub, sort, (\\))
+import Data.List(find, intercalate, intersect, nub, sort, (\\))
 import Data.Time
 import System.Environment(getArgs)
 import System.Directory
@@ -32,7 +33,7 @@ import System.IO
 import System.IO.Error
 import Text.JSON
 import Text.JSON.Generic
-import Text.Regex(splitRegex, mkRegex)
+import Text.Regex(splitRegex, mkRegex, subRegex)
 import Text.Regex.Posix
 
 data Book = Book {
@@ -50,11 +51,11 @@ type Tag = String
 
 ---------------------------------------
 ---------------------------------------
-syntaxMsg = "Syntax: <path to file> find tag1[:tag2...]\n"
-         ++ "                       add value tag1[:tag2...]\n"
-         ++ "                       del value\n"
-         ++ "                       tag value (+/-)tag1[(+/-)tag2...]"
-         ++ "                       list \"t\"/\"v\""
+syntaxMsg = "Syntax: <path to file> find tag1[(+|-)tag2...[/tagX[(+|-)tagY...]]]"
+         ++ "\n                       add value tag1[:tag2...]"
+         ++ "\n                       del value"
+         ++ "\n                       tag value (+|-)tag1[(+|-)tag2...]"
+         ++ "\n                       list \"t\"/\"v\""
 
 tooFewArgsMsg = "Too few arguments.\n" ++ syntaxMsg
 
@@ -115,18 +116,19 @@ getTags [] = []
 getTags (item:rest) = sort $ nub $ tags item ++ getTags rest
 
 ----------------------------------
--- find RAAH
+-- find RAAH or find tag1+tag2-tag3/tag4/tag5-tag6
 findByTags :: [String] -> IO ()
 findByTags [filepath, tagStr] = do
-  let tags = (stringToTags tagStr)
+  let tagSets = stringToTags tagStr "/"
+  let plusMinusTagSets = map toPlusAndMinusTags $ map stringToPlusMinusParts tagSets
   inFile <- openFile filepath ReadMode
   contents <- hGetContents inFile
   let book = (decodeJSON contents :: Book)
 
-  let foundTags = itemsByTags tags book
-  if length foundTags > 0
+  let foundItems = findByTagSets plusMinusTagSets book
+  if length foundItems > 0
     then do
-      putStrLn $ printResult $ foundTags
+      putStrLn $ printResult $ foundItems
     else do
       putStrLn "No matches."
    
@@ -138,19 +140,38 @@ printResult [] = ""
 printResult (item:rest) = show (itemId item) ++ ": " ++ value item ++ "\n"
                           ++ printResult rest
 
-stringToTags :: String -> [Tag]
-stringToTags tagStr = splitRegex (mkRegex ":") tagStr
+stringToTags :: String -> String -> [String]
+stringToTags tagStr regex = splitRegex (mkRegex regex) tagStr
 
-itemsByTags :: [Tag] -> Book -> [Item]
-itemsByTags [] _ = []
-itemsByTags (t:ts) b =
-  filter (\item -> t `elem` (tags item)) (items b) ++ (itemsByTags ts b)
+findByTagSets :: [([Tag], [Tag])] -> Book -> [Item]
+findByTagSets sets book = recurseFindItems [] sets (items book)
+
+recurseFindItems :: [Item] -> [([Tag], [Tag])] -> [Item] -> [Item]
+recurseFindItems result [] _ = result
+recurseFindItems result (set:rest) items' =
+  recurseFindItems (
+    (excludeItemsByTags (snd set) $ includeItemsByTags (fst set) items')
+    ++ result) rest items'
+
+includeItemsByTags :: [Tag] -> [Item] -> [Item]
+includeItemsByTags [] _ = []
+includeItemsByTags tgs items =
+  filter (\item -> length (tgs `intersect` tags item) == length tgs) items
+--includeItemsByTags (t:ts) f items =
+--  filter (\item -> t `elem` (tags item)) items ++ (itemsByTags ts items)
+
+excludeItemsByTags :: [Tag] -> [Item] -> [Item]
+excludeItemsByTags [] items = items
+excludeItemsByTags tgs items =
+  filter (\item -> length (tgs `intersect` tags item) == 0) items
+--excludeItemsByTags (t:ts) f items =
+--  filter (\item -> t `notElem` (tags item)) items ++ (itemsByTags ts items)
 
 ----------------------------------
 -- add "val1" tag1:tag2
 addValue :: [String] -> IO ()
 addValue [filepath, value, tagStr] = do
-  let tags = stringToTags tagStr
+  let tags = stringToTags tagStr ":" :: [Tag]
   
   handle <- openFile filepath ReadMode
   (tempName, tempHandle) <- openTempFile "." "temp"
@@ -171,7 +192,8 @@ addValue _ = error "Syntax: <path to file> add value tag1[:tag2...]"
 createDateTag :: IO Tag
 createDateTag = do
   c <- getCurrentTime
-  return ("Date " ++ (show $ utctDay c) :: Tag)
+  -- replace minuses with dots because minus is not allowed in tag
+  return ("Date " ++ subRegex (mkRegex "-") (show $ utctDay c) "." :: Tag)
 
 addValueToBook :: String -> [Tag] -> Tag -> Int -> Book -> Book
 addValueToBook value tags dateTag nextId oldBook =
@@ -281,14 +303,16 @@ changeTags [filepath, value, tagStr] = do
       putStrLn $ "  +" ++ show addTags
       putStrLn $ "  -" ++ show delTags
   hClose handle
-changeTags _ = error "Syntax: <path to file> tag value (+/-)tag1[(+/-)tag2...]"
+changeTags _ = error "Syntax: <path to file> tag value (+|-)tag1[(+|-)tag2...]"
 
 parseChangeTags :: String -> ([Tag], [Tag])
 parseChangeTags str = toPlusAndMinusTags $ stringToPlusMinusParts str
 
 -- TODO: Can't use plus or minus characters in tags
 stringToPlusMinusParts :: String -> [String]
-stringToPlusMinusParts tagStr = concat (tagStr =~ "[+-][^+-]+" :: [[String]])
+-- Take tags from beginning of string or that start with + or -
+-- This regex produces duplicates (why?) which are removed with nub
+stringToPlusMinusParts tagStr = nub $ concat (tagStr =~ "(^[^+-]+|[+-][^+-]+)" :: [[String]])
 
 toPlusAndMinusTags :: [String] -> ([Tag], [Tag])
 toPlusAndMinusTags plusMinusParts = recursePlusMinusTags plusMinusParts [] []
@@ -297,9 +321,8 @@ toPlusAndMinusTags plusMinusParts = recursePlusMinusTags plusMinusParts [] []
           case (head part) of
             '+' -> recursePlusMinusTags rest (actualTag : plusTags) minusTags
             '-' -> recursePlusMinusTags rest plusTags (actualTag : minusTags)
-            -- TODO: This silently ignores unexpected modifiers.
-            -- Not a problem at this point because stringToPlusMinusParts splits only with + and -
-            c   -> recursePlusMinusTags rest plusTags minusTags
+            -- Elements that does not start with + or - are put in plus array in full
+            c   -> recursePlusMinusTags rest (part : plusTags) minusTags
           where actualTag = tail part :: Tag
 
 modifyItemTags :: String -> [Tag] -> [Tag] -> Book -> Book

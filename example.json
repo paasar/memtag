@@ -1,4 +1,4 @@
-{"bookId":1,"items":[{"itemId":5,"value":"aaa","tags":["asfd","tag1*tag3","tag2","Date 2012-11-27"]},
-                     {"itemId":4,"value":"bbb","tags":["aaaa","Date 2012-11-26"]},
+{"bookId":1,"items":[{"itemId":5,"value":"aaa","tags":["asfd","tag1*tag3","tag2","Date 2012.11.27"]},
+                     {"itemId":4,"value":"bbb","tags":["aaaa","Date 2012.11.26"]},
                      {"itemId":3,"value":"ccc","tags":["RAAH"]},
-                     {"itemId":2,"value":"ddd","tags":["Date 2012-11-27","tagi"]}]}
+                     {"itemId":2,"value":"ddd","tags":["Date 2012.11.27","tagi"]}]}
