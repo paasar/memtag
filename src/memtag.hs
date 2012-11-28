@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    find value tag-modifiers
+    modify tags selector is id
     delete value(s) by tag(s)
     modify value
     pretty print JSON
@@ -11,7 +11,6 @@
     tag wildcards
     tag1+tag2-tag3
     find value by part of value
-    refactor file handling into one place
   DONE:
     find value by tags
     add value
@@ -23,6 +22,8 @@
     list tags
     list all values
     ~check argument amount
+    find value with tag-modifiers
+    refactor file handling into one place
 -}
 import qualified Control.Exception as C
 import Data.List(find, intercalate, intersect, nub, sort, (\\))
@@ -94,14 +95,31 @@ handler e
   | isDoesNotExistError e = putStrLn "The file doesn't exist!"
   | otherwise = ioError e
 
+----------------------------------
+-- File handling helpers
+----------------------------------
+readBook :: String -> IO (Book, Handle)
+readBook filepath = do
+  inFile <- openFile filepath ReadMode
+  contents <- hGetContents inFile
+  return (decodeJSON contents :: Book, inFile)
 
+writeBook :: String -> Handle -> Book -> IO ()
+writeBook filepath inFile book = do
+  (tempName, tempHandle) <- openTempFile "." "temp"
+  hPutStr tempHandle $ (encodeJSON book)
+  hClose inFile
+  hClose tempHandle
+  removeFile filepath
+  renameFile tempName filepath
+
+----------------------------------
+-- Actions
 ----------------------------------
 -- list t/v
 list :: [String] -> IO ()
 list [filepath, desiredType] = do
-  inFile <- openFile filepath ReadMode
-  contents <- hGetContents inFile
-  let book = (decodeJSON contents :: Book)
+  (book, inFile) <- readBook filepath
 
   if desiredType == "t"
     then do
@@ -119,13 +137,12 @@ getTags (item:rest) = sort $ nub $ tags item ++ getTags rest
 -- find RAAH or find tag1+tag2-tag3/tag4/tag5-tag6
 findByTags :: [String] -> IO ()
 findByTags [filepath, tagStr] = do
+  (book, inFile) <- readBook filepath
+
   let tagSets = stringToTags tagStr "/"
   let plusMinusTagSets = map toPlusAndMinusTags $ map stringToPlusMinusParts tagSets
-  inFile <- openFile filepath ReadMode
-  contents <- hGetContents inFile
-  let book = (decodeJSON contents :: Book)
-
   let foundItems = findByTagSets plusMinusTagSets book
+  
   if length foundItems > 0
     then do
       putStrLn $ printResult $ foundItems
@@ -157,15 +174,11 @@ includeItemsByTags :: [Tag] -> [Item] -> [Item]
 includeItemsByTags [] _ = []
 includeItemsByTags tgs items =
   filter (\item -> length (tgs `intersect` tags item) == length tgs) items
---includeItemsByTags (t:ts) f items =
---  filter (\item -> t `elem` (tags item)) items ++ (itemsByTags ts items)
 
 excludeItemsByTags :: [Tag] -> [Item] -> [Item]
 excludeItemsByTags [] items = items
 excludeItemsByTags tgs items =
   filter (\item -> length (tgs `intersect` tags item) == 0) items
---excludeItemsByTags (t:ts) f items =
---  filter (\item -> t `notElem` (tags item)) items ++ (itemsByTags ts items)
 
 ----------------------------------
 -- add "val1" tag1:tag2
@@ -173,19 +186,14 @@ addValue :: [String] -> IO ()
 addValue [filepath, value, tagStr] = do
   let tags = stringToTags tagStr ":" :: [Tag]
   
-  handle <- openFile filepath ReadMode
-  (tempName, tempHandle) <- openTempFile "." "temp"
-  contents <- hGetContents handle
+  (book, inFile) <- readBook filepath
   
-  let book = (decodeJSON contents :: Book)
   dateTag <- createDateTag
   let nextId = nextItemId $ items book
   let updatedBook = addValueToBook value tags dateTag nextId book
-  hPutStr tempHandle $ (encodeJSON updatedBook)
-  hClose handle
-  hClose tempHandle
-  removeFile filepath
-  renameFile tempName filepath
+  
+  writeBook filepath inFile updatedBook
+  
   putStrLn $ "Value \"" ++ value ++ "\" (id: " ++ show nextId ++ ") added."
 addValue _ = error "Syntax: <path to file> add value tag1[:tag2...]"
 
@@ -213,9 +221,7 @@ nextItemId oldItems = (itemId (foldl1 maxId oldItems)) + 1
 -- del "valx"
 deleteByValue :: [String] -> IO ()
 deleteByValue [filepath, valueStr] = do
-  handle <- openFile filepath ReadMode
-  contents <- hGetContents handle
-  let book = (decodeJSON contents :: Book)
+  (book, inFile) <- readBook filepath
   
   let originalItems = items book
   let updatedBook = deleteFromBook value valueStr book
@@ -223,17 +229,11 @@ deleteByValue [filepath, valueStr] = do
   
   if originalItems == newItems
     then do
+      hClose inFile
       putStrLn "No match found, nothing done."
     else do
-      (tempName, tempHandle) <- openTempFile "." "temp"
-      hPutStr tempHandle $ (encodeJSON updatedBook)
-      hClose tempHandle
-      
-      removeFile filepath
-      renameFile tempName filepath
-      
+      writeBook filepath inFile updatedBook
       putStrLn $ "Value \"" ++ valueStr ++ "\" deleted."
-  hClose handle
 deleteByValue _ = error "Syntax: <path to file> del value"
 
 -- | Delete Item by Item attribute.
@@ -246,10 +246,7 @@ deleteFromBook f toDelete oldBook = oldBook { items = filter (\item -> f item /=
 -- delid 123
 deleteById :: [String] -> IO ()
 deleteById [filepath, idStr] = do
-  handle <- openFile filepath ReadMode
-  contents <- hGetContents handle
-  
-  let book = (decodeJSON contents :: Book)
+  (book, inFile) <- readBook filepath
 
   let originalItems = items book
   -- TODO: fail for non-int input
@@ -258,18 +255,12 @@ deleteById [filepath, idStr] = do
   
   if originalItems == newItems
     then do
+      hClose inFile
       putStrLn "No match found, nothing done."
     else do
-      (tempName, tempHandle) <- openTempFile "." "temp"
-      hPutStr tempHandle $ (encodeJSON updatedBook)
-      hClose tempHandle
-      
-      removeFile filepath
-      renameFile tempName filepath
-      
+      writeBook filepath inFile updatedBook
       let valueStr = value $ head $ originalItems \\ newItems
       putStrLn $ "Value \"" ++ valueStr ++ "\" deleted."
-  hClose handle
 deleteById _ = error "Syntax: <path to file> delid itemId"
 
 ----------------------------------
@@ -278,10 +269,7 @@ changeTags :: [String] -> IO ()
 changeTags [filepath, value, tagStr] = do
   let (addTags, delTags) = parseChangeTags tagStr
   
-  handle <- openFile filepath ReadMode
-  contents <- hGetContents handle
-  
-  let book = (decodeJSON contents :: Book)
+  (book, inFile) <- readBook filepath
 
   let originalItems = items book
   -- TODO: fail for non-int input
@@ -290,19 +278,14 @@ changeTags [filepath, value, tagStr] = do
   
   if originalItems == newItems
     then do
+      hClose inFile
       putStrLn "No match found, nothing done."
     else do
-      (tempName, tempHandle) <- openTempFile "." "temp"
-      hPutStr tempHandle $ (encodeJSON updatedBook)
-      hClose tempHandle
-      
-      removeFile filepath
-      renameFile tempName filepath
+      writeBook filepath inFile updatedBook
       
       putStrLn $ "Value \"" ++ value ++ "\" modified:"
       putStrLn $ "  +" ++ show addTags
       putStrLn $ "  -" ++ show delTags
-  hClose handle
 changeTags _ = error "Syntax: <path to file> tag value (+|-)tag1[(+|-)tag2...]"
 
 parseChangeTags :: String -> ([Tag], [Tag])
