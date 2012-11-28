@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    delete value(s) by tag(s)
+    delete Item(s) by tag(s)
     modify value
     pretty print JSON
     output options:
@@ -8,20 +8,19 @@
        hide tags
     special tags (date)
     tag wildcards
-    tag1+tag2-tag3
-    find value by part of value
+    find Item by part of value
+    Can't use plus or minus characters in tags
   DONE:
-    find value by tags
-    add value
+    find Item by tags
+    add Item
     pretty print results
-    date to items (done as a automatic tag)
-    delete value
-    delete by id
+    date to Items (done as a automatic tag)
+    delete Item by id
     add tag,remove tag (tag value +tag2-tag1)
     list tags
-    list all values
+    list all Items
     ~check argument amount
-    find value with tag-modifiers
+    find Item with tag-modifiers (+tag1-tag2/tag3)
     refactor file handling into one place
     modify tags selector is id
 -}
@@ -37,6 +36,9 @@ import Text.JSON.Generic
 import Text.Regex(splitRegex, mkRegex, subRegex)
 import Text.Regex.Posix
 
+---------------------------------------
+-- Data entities
+---------------------------------------
 data Book = Book {
     bookId :: Int
   , items :: [Item]
@@ -51,12 +53,13 @@ data Item = Item {
 type Tag = String
 
 ---------------------------------------
+-- Main executer and friends
 ---------------------------------------
 syntaxMsg = "Syntax: <path to file> find tag1[(+|-)tag2...[/tagX[(+|-)tagY...]]]"
          ++ "\n                       add value tag1[:tag2...]"
          ++ "\n                       del value"
          ++ "\n                       tag value (+|-)tag1[(+|-)tag2...]"
-         ++ "\n                       list \"t\"/\"v\""
+         ++ "\n                       list \"t\"/\"i\""
 
 tooFewArgsMsg = "Too few arguments.\n" ++ syntaxMsg
 
@@ -292,7 +295,6 @@ changeTags _ = error "Syntax: <path to file> tag value (+|-)tag1[(+|-)tag2...]"
 parseChangeTags :: String -> ([Tag], [Tag])
 parseChangeTags str = toPlusAndMinusTags $ stringToPlusMinusParts str
 
--- TODO: Can't use plus or minus characters in tags
 stringToPlusMinusParts :: String -> [String]
 -- Take tags from beginning of string or that start with + or -
 -- This regex produces duplicates (why?) which are removed with nub
