@@ -26,7 +26,15 @@
     delid ja modify tags to support multiple ids
 -}
 import qualified Control.Exception as C
-import Data.List(find, intercalate, intersect, nub, sort, (\\))
+import Data.List(
+                  find
+                , intercalate
+                , intersect
+                , isInfixOf
+                , nub
+                , sort
+                , (\\)
+                )
 import Data.Time
 import System.Environment(getArgs)
 import System.Directory
@@ -191,8 +199,18 @@ excludeItemsByTags tgs items =
 ----------------------------------
 -- findv "val1"
 findByValue :: [String] -> IO ()
-findByValue [filepath, value] = do
-  putStrLn "Not yet implemented."
+findByValue [filepath, searchValue] = do
+  (book, inFile) <- readBook filepath
+  
+  let foundItems =
+        filter (\item -> searchValue `isInfixOf` (value item)) $ items book
+  
+  if length foundItems > 0
+    then do
+      putStrLn $ printResult $ foundItems
+    else do
+      putStrLn "No matches."
+  hClose inFile
 findByValue _ = error "Syntax: <path to file> findv <part of value>"
 
 ----------------------------------
