@@ -1,9 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    find Item by part of value
-    delete Item(s) by tag(s)
+    delete Item(s) by tag(s) (find ids -> delid)
     modify value
-    pretty print JSON
+    pretty print JSON (if python -mjson.tool is not enough)
     output options:
        sort
        hide tags
@@ -24,6 +23,7 @@
     refactor file handling into one place
     modify tags selector is id
     delid ja modify tags to support multiple ids
+    find Item by part of value
 -}
 import qualified Control.Exception as C
 import Data.List(
@@ -277,7 +277,7 @@ deleteFromBook :: (Eq a) => (Item -> a) -> a -> Book -> Book
 deleteFromBook f toDelete oldBook = oldBook { items = filter (\item -> f item /= toDelete) (items oldBook) }
 
 ----------------------------------
--- delid 123
+-- delid 123 or delid 1,4,15
 deleteById :: [String] -> IO ()
 deleteById [filepath, idStr] = do
   (book, inFile) <- readBook filepath
@@ -316,7 +316,6 @@ changeTags [filepath, idStr, tagStr] = do
 
   let originalItems = items book
   -- TODO: fail for non-int input
-  --let updatedBook = modifyItemTags (read idStr :: Int) addTags delTags book
   let updatedBook = modifyMultipleItemTags (toIntArray idStr) addTags delTags book
   let newItems = items updatedBook
   
