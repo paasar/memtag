@@ -64,15 +64,16 @@ type Tag = String
 ---------------------------------------
 -- Main executer and friends
 ---------------------------------------
-syntaxMsg = "Syntax: <path to file> find tag1[(+|-)tag2...[/tagX[(+|-)tagY...]]]"
+syntaxMsg = "\nSyntax: <path to file> find tag1[(+|-)tag2...[/tagX[(+|-)tagY...]]]"
          ++ "\n                       findv <part of value>"
          ++ "\n                       add value tag1[:tag2...]"
          ++ "\n                       delv value"
          ++ "\n                       del id[,id2...]"
          ++ "\n                       tag value (+|-)tag1[(+|-)tag2...]"
          ++ "\n                       list \"t\"/\"i\""
+         ++ "\n"
 
-tooFewArgsMsg = "Too few arguments.\n" ++ syntaxMsg
+tooFewArgsMsg = "\nToo few arguments." ++ syntaxMsg
 
 dispatch :: [(String, [String] -> IO ())]
 dispatch =  [ ("add", addValue)
