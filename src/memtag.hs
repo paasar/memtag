@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
+    find Item by part of value
     delete Item(s) by tag(s)
     modify value
     pretty print JSON
@@ -8,7 +9,6 @@
        hide tags
     special tags (date)
     tag wildcards
-    find Item by part of value
     Can't use plus or minus characters in tags
   DONE:
     find Item by tags
@@ -23,6 +23,7 @@
     find Item with tag-modifiers (+tag1-tag2/tag3)
     refactor file handling into one place
     modify tags selector is id
+    delid ja modify tags to support multiple ids
 -}
 import qualified Control.Exception as C
 import Data.List(find, intercalate, intersect, nub, sort, (\\))
@@ -110,7 +111,7 @@ readBook filepath = do
 writeBook :: String -> Handle -> Book -> IO ()
 writeBook filepath inFile book = do
   (tempName, tempHandle) <- openTempFile "." "temp"
-  hPutStr tempHandle $ (encodeJSON book)
+  hPutStr tempHandle $ encodeJSON book
   hClose inFile
   hClose tempHandle
   removeFile filepath
@@ -142,7 +143,7 @@ findByTags :: [String] -> IO ()
 findByTags [filepath, tagStr] = do
   (book, inFile) <- readBook filepath
 
-  let tagSets = stringToTags tagStr "/"
+  let tagSets = split tagStr "/"
   let plusMinusTagSets = map toPlusAndMinusTags $ map stringToPlusMinusParts tagSets
   let foundItems = findByTagSets plusMinusTagSets book
   
@@ -161,8 +162,8 @@ printResult (item:rest) = show (itemId item) ++ ": " ++ value item
                           ++ " [" ++ (intercalate ", " (tags item)) ++ "]\n"
                           ++ printResult rest
 
-stringToTags :: String -> String -> [String]
-stringToTags tagStr regex = splitRegex (mkRegex regex) tagStr
+split :: String -> String -> [String]
+split tagStr regex = splitRegex (mkRegex regex) tagStr
 
 findByTagSets :: [([Tag], [Tag])] -> Book -> [Item]
 findByTagSets sets book = recurseFindItems [] sets (items book)
@@ -188,7 +189,7 @@ excludeItemsByTags tgs items =
 -- add "val1" tag1:tag2
 addValue :: [String] -> IO ()
 addValue [filepath, value, tagStr] = do
-  let tags = stringToTags tagStr ":" :: [Tag]
+  let tags = split tagStr ":" :: [Tag]
   
   (book, inFile) <- readBook filepath
   
@@ -254,7 +255,7 @@ deleteById [filepath, idStr] = do
 
   let originalItems = items book
   -- TODO: fail for non-int input
-  let updatedBook = deleteFromBook itemId (read idStr :: Int) book
+  let updatedBook = deleteMultipleFromBook itemId (toIntArray idStr) book
   let newItems = items updatedBook
   
   if originalItems == newItems
@@ -263,9 +264,18 @@ deleteById [filepath, idStr] = do
       putStrLn "No match found, nothing done."
     else do
       writeBook filepath inFile updatedBook
-      let valueStr = value $ head $ originalItems \\ newItems
-      putStrLn $ "Value \"" ++ valueStr ++ "\" deleted."
+      putStrLn $ "Item(s) " ++ idStr ++ " deleted."
 deleteById _ = error "Syntax: <path to file> delid itemId"
+
+toIntArray :: String -> [Int]
+toIntArray "" = []
+toIntArray idStr = map read $ split idStr ","
+
+deleteMultipleFromBook :: (Eq a) => (Item -> a) -> [a] -> Book -> Book
+deleteMultipleFromBook f values oldBook = recurseDeleteFromBook f values oldBook
+  where recurseDeleteFromBook f' [] book         = book
+        recurseDeleteFromBook f' (val:rest) book =
+          recurseDeleteFromBook f' rest (deleteFromBook f' val book)
 
 ----------------------------------
 -- tag value +tag2-tag1...
@@ -277,17 +287,18 @@ changeTags [filepath, idStr, tagStr] = do
 
   let originalItems = items book
   -- TODO: fail for non-int input
-  let updatedBook = modifyItemTags (read idStr :: Int) addTags delTags book
+  --let updatedBook = modifyItemTags (read idStr :: Int) addTags delTags book
+  let updatedBook = modifyMultipleItemTags (toIntArray idStr) addTags delTags book
   let newItems = items updatedBook
   
   if originalItems == newItems
     then do
       hClose inFile
-      putStrLn "No match found, nothing done."
+      putStrLn "No match found or tags didn't change, nothing done."
     else do
       writeBook filepath inFile updatedBook
       
-      putStrLn $ "Item #" ++ idStr ++ " modified:"
+      putStrLn $ "Item(s) " ++ idStr ++ " modified:"
       putStrLn $ "  +" ++ show addTags
       putStrLn $ "  -" ++ show delTags
 changeTags _ = error "Syntax: <path to file> tag value (+|-)tag1[(+|-)tag2...]"
@@ -311,10 +322,17 @@ toPlusAndMinusTags plusMinusParts = recursePlusMinusTags plusMinusParts [] []
             c   -> recursePlusMinusTags rest (part : plusTags) minusTags
           where actualTag = tail part :: Tag
 
+modifyMultipleItemTags :: [Int] -> [Tag] -> [Tag] -> Book -> Book  
+modifyMultipleItemTags ids plusTags minusTags oldBook =
+    recurseModifyMultipleItemTags ids plusTags minusTags oldBook
+  where recurseModifyMultipleItemTags [] _ _ book = book
+        recurseModifyMultipleItemTags (id:rest) plusTags minusTags book =
+          recurseModifyMultipleItemTags rest plusTags minusTags (modifyItemTags id plusTags minusTags book)
+
 modifyItemTags :: Int -> [Tag] -> [Tag] -> Book -> Book
 modifyItemTags targetId plusTags minusTags oldBook =
-    oldBook { items = modifyValueTags (items oldBook) targetId plusTags minusTags }
-  where modifyValueTags items targetId' plusTags' minusTags' =
+    oldBook { items = modifyTagsById (items oldBook) targetId plusTags minusTags }
+  where modifyTagsById items targetId' plusTags' minusTags' =
           case (find (\item -> itemId item == targetId') items) of
             Nothing    -> items
             Just item' -> modifyTags item' plusTags' minusTags'
