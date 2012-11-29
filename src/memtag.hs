@@ -57,8 +57,10 @@ type Tag = String
 -- Main executer and friends
 ---------------------------------------
 syntaxMsg = "Syntax: <path to file> find tag1[(+|-)tag2...[/tagX[(+|-)tagY...]]]"
+         ++ "\n                       findv <part of value>"
          ++ "\n                       add value tag1[:tag2...]"
-         ++ "\n                       del value"
+         ++ "\n                       delv value"
+         ++ "\n                       del id[,id2...]"
          ++ "\n                       tag value (+|-)tag1[(+|-)tag2...]"
          ++ "\n                       list \"t\"/\"i\""
 
@@ -66,9 +68,10 @@ tooFewArgsMsg = "Too few arguments.\n" ++ syntaxMsg
 
 dispatch :: [(String, [String] -> IO ())]
 dispatch =  [ ("add", addValue)
+            , ("del", deleteById)
+            , ("delv", deleteByValue)
             , ("find", findByTags)
-            , ("del", deleteByValue)
-            , ("delid", deleteById)
+            , ("findv", findByValue)
             , ("tag", changeTags)
             , ("list", list)
             ]
@@ -184,6 +187,13 @@ excludeItemsByTags :: [Tag] -> [Item] -> [Item]
 excludeItemsByTags [] items = items
 excludeItemsByTags tgs items =
   filter (\item -> length (tgs `intersect` tags item) == 0) items
+
+----------------------------------
+-- findv "val1"
+findByValue :: [String] -> IO ()
+findByValue [filepath, value] = do
+  putStrLn "Not yet implemented."
+findByValue _ = error "Syntax: <path to file> findv <part of value>"
 
 ----------------------------------
 -- add "val1" tag1:tag2
