@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
-    delete Item(s) by tag(s) (find ids -> delid)
+    find by tags by part of tag
+    show all used tag combinations
+    delete Item(s) by tag(s) (delid $ find ids)
     modify value
     pretty print JSON (if python -mjson.tool is not enough)
     output options:
@@ -228,7 +230,7 @@ addValue [filepath, value, tagStr] = do
   
   writeBook filepath inFile updatedBook
   
-  putStrLn $ "Value \"" ++ value ++ "\" (id: " ++ show nextId ++ ") added."
+  putStrLn $ "Item \"" ++ value ++ "\" (id: " ++ show nextId ++ ") added."
 addValue _ = error "Syntax: <path to file> add value tag1[:tag2...]"
 
 createDateTag :: IO Tag
@@ -267,7 +269,7 @@ deleteByValue [filepath, valueStr] = do
       putStrLn "No match found, nothing done."
     else do
       writeBook filepath inFile updatedBook
-      putStrLn $ "Value \"" ++ valueStr ++ "\" deleted."
+      putStrLn $ "Item \"" ++ valueStr ++ "\" deleted."
 deleteByValue _ = error "Syntax: <path to file> del value"
 
 -- | Delete Item by Item attribute.
