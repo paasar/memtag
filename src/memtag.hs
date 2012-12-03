@@ -1,7 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {- TODO:
     find by tags by part of tag
-    show all used tag combinations
     delete Item(s) by tag(s) (delid $ find ids)
     modify value
     pretty print JSON (if python -mjson.tool is not enough)
@@ -26,6 +25,7 @@
     modify tags selector is id
     delid ja modify tags to support multiple ids
     find Item by part of value
+    show all used tag combinations
 -}
 import qualified Control.Exception as C
 import Data.List(
@@ -85,6 +85,7 @@ dispatch =  [ ("add", addValue)
             , ("findv", findByValue)
             , ("tag", changeTags)
             , ("list", list)
+            , ("tagsets", listTagSets)
             ]
 
 main = execute `C.catch` handler
@@ -371,3 +372,29 @@ modifyItemTags targetId plusTags minusTags oldBook =
 modifyTags :: Item -> [Tag] -> [Tag] -> Item
 modifyTags orig plusTags minusTags = orig { tags = nub $
   plusTags ++ filter (\tag -> tag `notElem` minusTags) (tags orig) }
+
+----------------------------------
+-- tagsets
+listTagSets :: [String] -> IO ()
+listTagSets [filepath] = do
+  (book, inFile) <- readBook filepath
+  
+  let tagSets = findTagSets book
+  
+  if length tagSets > 0
+    then do
+      putStrLn $ printTagSets tagSets
+    else do
+      putStrLn "Could not find any tags."
+    
+  hClose inFile
+
+findTagSets :: Book -> [[Tag]]
+findTagSets book = nub $ recurseTagSets [] (items book)
+  where recurseTagSets result [] = result
+        recurseTagSets result (item:rest) = sort (tags item) : recurseTagSets result rest
+
+printTagSets :: [[Tag]] -> String
+printTagSets [] = ""
+printTagSets (tagSet:rest) = "\"" ++ (intercalate "+" tagSet) ++ "\""
+                             ++ "\n" ++ printTagSets rest
