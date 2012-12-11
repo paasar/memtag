@@ -71,7 +71,7 @@ syntaxMsg = "\nSyntax: <path to file> find tag1[(+|-)tag2...[/tagX[(+|-)tagY...]
          ++ "\n                       add value tag1[:tag2...]"
          ++ "\n                       delv value"
          ++ "\n                       del id[,id2...]"
-         ++ "\n                       tag value (+|-)tag1[(+|-)tag2...]"
+         ++ "\n                       tag id[,id2...] (+|-)tag1[(+|-)tag2...]"
          ++ "\n                       list \"t\"/\"i\""
          ++ "\n"
 
@@ -280,7 +280,7 @@ deleteFromBook :: (Eq a) => (Item -> a) -> a -> Book -> Book
 deleteFromBook f toDelete oldBook = oldBook { items = filter (\item -> f item /= toDelete) (items oldBook) }
 
 ----------------------------------
--- delid 123 or delid 1,4,15
+-- delid ids (123 or delid 1,4,15)
 deleteById :: [String] -> IO ()
 deleteById [filepath, idStr] = do
   (book, inFile) <- readBook filepath
@@ -310,7 +310,7 @@ deleteMultipleFromBook f values oldBook = recurseDeleteFromBook f values oldBook
           recurseDeleteFromBook f' rest (deleteFromBook f' val book)
 
 ----------------------------------
--- tag value +tag2-tag1...
+-- tag ids +tag2-tag1...
 changeTags :: [String] -> IO ()
 changeTags [filepath, idStr, tagStr] = do
   let (addTags, delTags) = parseChangeTags tagStr
