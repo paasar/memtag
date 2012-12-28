@@ -1,0 +1,30 @@
+TODO:
+  find by tags by part of tag
+  delete Item(s) by tag(s) (delid $ find ids)
+  modify value
+  ignore case
+  pretty print JSON (if python -mjson.tool is not enough)
+  output options:
+     sort
+     hide tags
+  rethink how to modularise Actions (IO-stuff vs. pure functions)
+  special tags (date)
+  tag wildcards
+  Can't use plus or minus characters in tags
+  multiline values (giving these from command line might be difficult)
+DONE:
+  find Item by tags
+  add Item
+  pretty print results
+  date to Items (done as a automatic tag)
+  delete Item by id
+  add tag,remove tag (tag value +tag2-tag1)
+  list tags
+  list all Items
+  ~check argument amount
+  find Item with tag-modifiers (+tag1-tag2/tag3)
+  refactor file handling into one place
+  modify tags selector is id
+  delid ja modify tags to support multiple ids
+  find Item by part of value
+  show all used tag combinations
